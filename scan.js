@@ -413,18 +413,35 @@ async function uploadReport(csvContent, userInfo) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Content-Length': payload.length,
+            'Content-Length': Buffer.byteLength(payload),
             'x-api-key': API_KEY 
         }
     };
 
     return new Promise((resolve) => {
         const req = https.request(UPLOAD_API_URL, options, (res) => {
-            if(res.statusCode === 200) console.log(`${colors.green}    > Upload Success!${colors.reset}`);
-            else console.log(`${colors.red}    > Upload Failed (Status: ${res.statusCode})${colors.reset}`);
-            resolve();
+            // FIX: Always read the data events, even on error!
+            let responseBody = '';
+            
+            res.on('data', (chunk) => { responseBody += chunk; });
+            
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    console.log(`${colors.green}    > Upload Success!${colors.reset}`);
+                } else {
+                    console.log(`${colors.red}    > Upload Failed (Status: ${res.statusCode})${colors.reset}`);
+                    // Optional: Print the error message from Lambda to help debug
+                    if (responseBody) console.log(`${colors.dim}      Server said: ${responseBody}${colors.reset}`);
+                }
+                resolve();
+            });
         });
-        req.on('error', (e) => { console.log(`    > Upload Error: ${e.message}`); resolve(); });
+
+        req.on('error', (e) => { 
+            console.log(`    > Upload Error: ${e.message}`); 
+            resolve(); 
+        });
+        
         req.write(payload);
         req.end();
     });
