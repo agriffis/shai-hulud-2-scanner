@@ -385,12 +385,14 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
     try {
         const content = JSON.parse(fs.readFileSync(pJsonPath, 'utf8'));
         const version = content.version;
+        const targetVersions = badPackages[pkgName];
         
         // Now valid because we stripped the '=' in fetchIOCs
-        if (badPackages[pkgName].includes(version)) {
-            console.log(`${colors.red}    [!] ALERT: ${pkgName}@${version} found at ${pkgPath}${colors.reset}`);
+        if (targetVersions.includes('*') || targetVersions.includes(version)) {
+            const matchType = targetVersions.includes('*') ? 'WILDCARD_MATCH' : 'VERSION_MATCH';
+            console.log(`${colors.red}    [!] ALERT: ${pkgName}@${version} matches denylist (${matchType})${colors.reset}`);
             detectedIssues.push({
-                type: 'VERSION_MATCH',
+                type: matchType,
                 package: pkgName,
                 version: version,
                 location: pkgPath

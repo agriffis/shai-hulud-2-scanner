@@ -74,6 +74,7 @@ The tool categorizes findings into five types:
 | Finding Type | Severity | Description | Action Required |
 |-------------|----------|-------------|-----------------|
 | **FORENSIC_MATCH** | 🔴 **CRITICAL** | Actual malware files (setup_bun.js) were found on disk | ⚠️ **DELETE IMMEDIATELY.** Rotate secrets. |
+| **WILDCARD_MATCH** | 🔴 **CRITICAL** | Package matches a strict denylist where all versions are malicious. | ⚠️ **DELETE IMMEDIATELY.** |
 | **VERSION_MATCH** | 🟠 **HIGH** | Package name and version match the known infected list | Uninstall package. Check package-lock.json. |
 | **LOCKFILE_HIT** | 🟠 **HIGH** | The compromised version is defined in your lockfile, meaning it will be installed next time you run npm install | Delete package-lock.json and run 'npm install' to regenerate it with safe versions. |
 | **GHOST_PACKAGE** | 🟡 **WARNING** | Folder exists with a targeted name, but is empty/broken | Investigate manually. Likely a failed install or artifact. |
