@@ -1,11 +1,24 @@
 #!/usr/bin/env node
 /**
- * Shai-Hulud 2.0 Scanner Tool (Verbose Edition)
- * * Features:
- * - High Verbosity: Logs every location being scanned.
- * - Deep NVM/Yarn scanning.
- * - Forensic & Metadata analysis.
- * - AWS Report Upload.
+ * Shai-Hulud 2.0 Supply Chain Attack Scanner
+ * 
+ * A forensic auditing tool for detecting compromised npm packages associated with
+ * the Shai-Hulud 2.0 supply chain attack. Performs deep analysis of local caches,
+ * global installations, and project dependencies against threat intelligence IOCs.
+ * 
+ * Key Capabilities:
+ * - Multi-layer Detection: Forensic file scanning, metadata validation, and behavioral analysis
+ * - Cross-Platform Support: Windows, macOS, Linux with native NVM integration
+ * - Zero Dependencies: Self-contained scanner requiring only Node.js runtime
+ * - Threat Intelligence: Auto-syncs with Wiz Research IOC database
+ * - Enterprise Reporting: Optional centralized report aggregation for organizations
+ * 
+ * Detection Methods:
+ * 1. Forensic Analysis: Scans for known malware payloads (setup_bun.js, etc.)
+ * 2. Version Matching: Validates installed packages against IOC registry
+ * 3. Lockfile Inspection: Identifies compromised dependencies in lock files
+ * 4. Ghost Detection: Alerts on suspicious directory structures
+ * 5. Behavioral Signatures: Detects malicious script patterns in package.json
  */
 
 const fs = require('fs');
