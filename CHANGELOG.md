@@ -5,6 +5,16 @@ All notable changes to the Shai-Hulud 1.0/2.0 Scanner will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-11-30
+
+### Fixed
+
+- **CSV Parser Enhancement:** Fixed multi-version IOC parsing from Wiz Research feed
+  - Now correctly handles entries with multiple versions separated by `||` delimiter
+  - Example: `test-foundry-app,= 1.0.4 || = 1.0.3 || = 1.0.2 || = 1.0.1` now captures all four versions
+  - Previously only the first version would be captured, missing subsequent vulnerable versions
+  - Ensures complete threat intelligence coverage for packages with multiple compromised versions
+
 ## [1.3.0] - 2025-11-30
 
 ### Added

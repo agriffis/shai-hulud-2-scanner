@@ -334,10 +334,18 @@ function parseWizCSV(data) {
         const parts = lines[i].split(',');
         if (parts.length >= 2) {
             const rawName = parts[0].replace(/["']/g, '').trim();
-            const rawVer = parts[1].replace(/["'=<>v\s]/g, '');
-            if (rawName && rawVer) {
+            
+            // Get version field (everything after first comma)
+            const versionField = parts.slice(1).join(',').trim();
+            
+            // Split by || to handle multi-version format: "= 1.0.4 || = 1.0.3 || = 1.0.2"
+            const versions = versionField.split('||').map(v => 
+                v.replace(/["'=<>v\s]/g, '').trim()
+            ).filter(v => v !== '');
+            
+            if (rawName && versions.length > 0) {
                 if (!result[rawName]) result[rawName] = [];
-                result[rawName].push(rawVer);
+                result[rawName].push(...versions);
             }
         }
     }

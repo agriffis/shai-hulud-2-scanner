@@ -79,16 +79,10 @@ Notes:
 
 Control when the scanner fails builds based on finding severity. By default, the scanner always exits with code 0. Use `--fail-on` to enable CI/CD mode:
 
-    node scan.js --fail-on=critical
-    or
     node scan.js /path/to/project --fail-on=critical
 
-    node scan.js --fail-on=warning
-    or
     node scan.js /path/to/project --fail-on=warning
 
-    node scan.js --fail-on=off
-    or
     node scan.js /path/to/project --fail-on=off
 
 **Modes:**
@@ -102,7 +96,7 @@ Control when the scanner fails builds based on finding severity. By default, the
 ```groovy
 stage('Security Scan') {
     steps {
-        sh 'npx @cyberdracula/shai-hulud-2-scanner --fail-on=critical'
+        sh 'npx @cyberdracula/shai-hulud-2-scanner /path/to/project --fail-on=critical'
     }
 }
 ```
@@ -111,7 +105,7 @@ stage('Security Scan') {
 
 ```yaml
 - name: Scan for Supply Chain Attacks
-  run: npx @cyberdracula/shai-hulud-2-scanner --fail-on=critical
+  run: npx @cyberdracula/shai-hulud-2-scanner /path/to/project --fail-on=critical
 ```
 
 **GitLab CI Example:**
@@ -119,7 +113,7 @@ stage('Security Scan') {
 ```yaml
 security_scan:
   script:
-    - npx @cyberdracula/shai-hulud-2-scanner --fail-on=critical
+    - npx @cyberdracula/shai-hulud-2-scanner /path/to/project --fail-on=critical
 ```
 
 > **Note:** Without the `--fail-on` flag, the scanner maintains backwards-compatible behavior (always exits 0). This ensures existing workflows are not disrupted.
