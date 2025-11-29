@@ -5,6 +5,15 @@ All notable changes to the Shai-Hulud 1.0/2.0 Scanner will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2025-11-29
+
+### Fixed
+
+- **Root Package Scanning:** Project root `package.json` files now receive full security analysis
+  - Ensures monorepo roots and standalone projects are properly analyzed
+- **Lockfile Coverage in node_modules:** Added scanning for lockfiles within installed packages
+  - Some npm packages ship with their own `package-lock.json` or `yarn.lock`
+
 ## [1.2.0] - 2025-11-29
 
 ### Added

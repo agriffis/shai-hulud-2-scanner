@@ -492,11 +492,15 @@ function scanDir(currentPath, badPackages, depth = 0, maxDepth = DEFAULT_MAX_SCA
     let entries;
     try { entries = fs.readdirSync(currentPath, { withFileTypes: true }); } catch (e) { return; }
 
+    // Check root-level package directory using full checkPackageJson (forensic + version matching)
+    // Use the directory name as package name for now (better than nothing for root projects)
+    checkPackageJson(currentPath, path.basename(currentPath), badPackages);
+
     for (const entry of entries) {
         const fullPath = path.join(currentPath, entry.name);
 
         if (entry.isFile() && (entry.name === 'package-lock.json' || entry.name === 'yarn.lock')) {
-            checkLockfile(fullPath, badPackages, entry.name);
+            checkLockfile(fullPath, badPackages);
         }
         else if (entry.isDirectory() && entry.name === 'node_modules') {
             scanNodeModules(fullPath, badPackages);
@@ -518,11 +522,30 @@ function scanNodeModules(modulesPath, badPackages) {
                 if (fs.existsSync(scopedPath)) {
                     const scopedPackages = fs.readdirSync(scopedPath);
                     for (const sp of scopedPackages) {
-                        checkPackageJson(path.join(scopedPath, sp), `${pkg}/${sp}`, badPackages);
+                        const pkgPath = path.join(scopedPath, sp);
+                        checkPackageJson(pkgPath, `${pkg}/${sp}`, badPackages);
+                        // Check for lockfiles within this package
+                        checkPackageLockfiles(pkgPath, badPackages);
                     }
                 }
             } else {
-                checkPackageJson(path.join(modulesPath, pkg), pkg, badPackages);
+                const pkgPath = path.join(modulesPath, pkg);
+                checkPackageJson(pkgPath, pkg, badPackages);
+                // Check for lockfiles within this package
+                checkPackageLockfiles(pkgPath, badPackages);
+            }
+        }
+    } catch (e) {}
+}
+
+// Helper: Check for lockfiles within a package directory
+function checkPackageLockfiles(pkgPath, badPackages) {
+    try {
+        const lockFiles = ['package-lock.json', 'yarn.lock'];
+        for (const lockFile of lockFiles) {
+            const lockPath = path.join(pkgPath, lockFile);
+            if (fs.existsSync(lockPath)) {
+                checkLockfile(lockPath, badPackages);
             }
         }
     } catch (e) {}
