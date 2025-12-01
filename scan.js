@@ -115,6 +115,9 @@ const MALWARE_FILES = Object.freeze([
     '.github/workflows/discussion.yaml',
 ]);
 
+// Pre-compute lowercase versions for case-insensitive matching
+const MALWARE_FILES_LOWER = new Set(MALWARE_FILES.map(f => f.toLowerCase()));
+
 // ============================================================================
 // HEURISTIC CONFIGURATION (ReDoS-hardened patterns)
 // ============================================================================
@@ -237,7 +240,7 @@ function escapeCSV(str) {
     // Standard CSV escaping: double quotes and wrap if needed
     if (escaped.includes('"') || escaped.includes(',') || escaped.includes('\n') || escaped.includes('\r')) {
         escaped = '"' + escaped.replace(/"/g, '""') + '"';
-    } else if (escaped.includes(' ') || dangerousStart.test(s)) {
+    } else if (escaped.includes(' ') || escaped.startsWith("'")) {
         escaped = '"' + escaped + '"';
     }
 
