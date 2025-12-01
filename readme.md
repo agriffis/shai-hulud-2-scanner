@@ -162,6 +162,8 @@ security_scan:
 
 > **Note:** By default, reports are saved locally as `shai-hulud-report.csv`. No data is uploaded unless you explicitly configure an API endpoint.
 
+✅ Known False Positives (Safe to Ignore)
+React Native projects: contents.json files in the ios/ folder are standard iOS asset catalog files (Xcode resources), NOT malware indicators. These are safe to ignore.
 ----------------------------------------------------------------
 
 ## Interpreting the Report (shai-hulud-report.csv)
