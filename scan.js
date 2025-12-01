@@ -583,7 +583,6 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
                 location: pkgPath,
                 details: file
             });
-            return; 
         }
     }
 
