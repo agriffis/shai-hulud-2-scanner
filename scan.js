@@ -112,7 +112,7 @@ const MALWARE_FILES = Object.freeze([
     'contents.json',
     'environment.json',
     'actionsSecrets.json',
-    '.github/workflows/discussion.yaml',
+    '.github/workflows/discussion.yml',
 ]);
 
 // Pre-compute lowercase versions for case-insensitive matching
@@ -1011,7 +1011,6 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
                     location: pkgPath,
                     details: file
                 });
-                return;
             }
         } catch (e) {
             // File doesn't exist, continue
@@ -1032,7 +1031,6 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
                     location: pkgPath,
                     details: `${item} (case variant)`
                 });
-                return;
             }
         }
     } catch (e) { }

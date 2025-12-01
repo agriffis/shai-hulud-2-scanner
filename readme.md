@@ -2,6 +2,16 @@
 
 A forensic auditing tool designed to detect the Shai-Hulud 1.0/2.0 (and related) npm supply chain attacks. It scans local caches, global installations, and project directories against the IOCs (Indicators of Compromise) provided by Wiz Research.
 
+## 🛡️ Security Hardening (v2.0.0)
+
+Shai-Hulud Scanner now includes advanced security protections:
+
+- **Symlink & Path Traversal Protection:** Prevents malicious symlinks and directory escapes during scan.
+- **Resource Limits:** Enforces max memory, file count, and scan duration to avoid resource exhaustion.
+- **CSV Injection Prevention:** All CSV reports are sanitized to prevent formula/code injection.
+- **Sensitive Data Redaction:** API keys, user info, and secrets are never included in reports.
+- **Graceful Shutdown:** If interrupted, generates a partial report with all findings up to that point.
+
 READ THIS FOR MORE INFO: https://www.wiz.io/blog/shai-hulud-2-0-ongoing-supply-chain-attack
 
 ## 🚀 Features
@@ -15,7 +25,11 @@ READ THIS FOR MORE INFO: https://www.wiz.io/blog/shai-hulud-2-0-ongoing-supply-c
 * **Forensic Scan:** Checks for physical malware files (setup_bun.js, bun_environment.js) regardless of version numbers.
 * **Metadata Scan:** Validates installed packages against live threat intelligence feeds.
 * **Ghost Detection:** Alerts on empty/broken directories that match target package names (potential failed malware installs).
-* **Enterprise Reporting:** Generates a CSV report with optional centralized upload capability for organizations.
+* **Enterprise Reporting:** Generates a sanitized CSV report with optional centralized upload capability for organizations.
+* **Case-Insensitive Detection:** Flags malware regardless of filename casing.
+* **Scan Statistics:** Reports total files scanned, scan duration, and summary stats.
+* **Built-in Help System:** Run with `--help` for usage instructions.
+* **Environment Variable Configuration:** API keys and upload URLs can be set via environment variables for secure automation.
   
 ## 📋 Prerequisites
 
@@ -62,6 +76,15 @@ To scan both system caches AND a specific directory, use the `--full-scan` flag:
 IOC data is cached for 30 minutes. To force a fresh download:
 
     node scan.js --no-cache
+
+**Set API Keys/Upload URLs via Environment Variables**
+
+For secure automation, you can set the following environment variables:
+
+    export SHAI_HULUD_API_KEY="your-secure-api-key"
+    export SHAI_HULUD_UPLOAD_URL="https://your-company-api.example.com/upload"
+
+These override the defaults in `scan.js` and are recommended for CI/CD.
 
 #### Limit Directory Traversal Depth
 
@@ -159,6 +182,12 @@ The tool categorizes findings into different severity levels. Understanding what
 
 > **Side Note for FORENSIC_MATCH:**
 > This finding can sometimes generate false positives (except setup_bun.js, bun_environment.js). Please verify if the found file is expected to be present (e.g., part of your own code or a legitimate tool). If unsure, investigate the file's origin and contents before taking action.
+
+> **CSV Report Security:**
+> All CSV reports are sanitized to prevent formula/code injection. Sensitive data (API keys, user info) is never included in the report.
+
+> **Partial Reports:**
+> If the scan is interrupted, a partial report is generated with all findings up to that point.
 
 ### Behavioral Heuristics (Install Script Scanner)
 
@@ -336,3 +365,12 @@ This tool is provided "as is" to assist in detection. It relies on public IOCs f
 ## Contributing
 
 Contributions are welcome! Please submit issues or pull requests on the GitHub repository.
+
+## Contributors
+
+Special thanks to everyone who has contributed to the Shai-Hulud 2.0 Scanner project:
+
+- @CyberDracula
+- MaSMas0 (https://github.com/MaSMas0) — Security hardening in 2.0
+- Hemachandsai (malicious package IOC feed)
+- Wiz Research (threat intelligence)
