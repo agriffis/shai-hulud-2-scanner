@@ -5,6 +5,28 @@ All notable changes to the Shai-Hulud 1.0/2.0 Scanner will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-12-03
+
+### Fixed
+
+- **Node.js Compatibility**
+  - Removed optional chaining operators (`?.`)
+
+### Added
+
+- **Severity-Based Alerting**
+  - To address the false/positive issues, forensic detections now differentiate between confirmed malware and suspicious artifacts
+  - `CRITICAL` severity (setup_bun.js, truffleSecrets.json, etc.):
+    - Red console output with `[!!!]` prefix
+    - Report type: `FORENSIC_MATCH`
+    - Label: "CRITICAL: MALWARE FILE FOUND"
+  - `HIGH` severity (bundle.js, contents.json with malicious patterns):
+    - Yellow console output with `[??]` prefix  
+    - Report type: `FORENSIC_ARTIFACT`
+    - Label: "SUSPICIOUS: Artifact Found"
+  - Provides better visibility into detection confidence levels
+  - Files matching forensic rules but verified as benign are now logged as `SAFE_MATCH`
+
 ## [2.0.0] - 2025-12-01
 
 ### Security

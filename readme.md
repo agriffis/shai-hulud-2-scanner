@@ -172,7 +172,8 @@ The tool categorizes findings into different severity levels. Understanding what
 
 | Finding Type | Severity | Description | Action Required |
 |-------------|----------|-------------|-----------------|
-| **FORENSIC_MATCH** | 🔴 **CRITICAL** | Actual malware files (setup_bun.js, bun_environment.js) were found on disk | ⚠️ **SYSTEM COMPROMISED.** See emergency response steps below. Also the side note under this table. |
+| **FORENSIC_MATCH** | 🔴 **CRITICAL** | High-confidence malware files (setup_bun.js, bun_environment.js, truffleSecrets.json, actionsSecrets.json, .github/workflows/discussion.yml) found with no content verification needed | ⚠️ **SYSTEM COMPROMISED.** See emergency response steps below. |
+| **FORENSIC_ARTIFACT** | 🟠 **HIGH** | Suspicious file detected (bundle.js, contents.json, cloud.json, environment.json) that matches malicious content signatures after deep inspection | Investigate file origin. If legitimate (e.g., React Native contents.json), mark as safe. Otherwise, remove immediately. |
 | **WILDCARD_MATCH** | 🔴 **CRITICAL** | Package matches a strict denylist where ALL versions are malicious. | ⚠️ **DELETE IMMEDIATELY.** Follow remediation steps below. |
 | **CRITICAL_SCRIPT** | 🔴 **CRITICAL** | Install/preinstall/postinstall script contains high-confidence malicious behavior (e.g., piping remote code to shell, base64→sh chains, privileged Docker flags, workflow backdoor files) | ⚠️ **ACTION NEEDED** Treat as incident: isolate host, remove package, rotate credentials, investigate lateral movement. |
 | **VERSION_MATCH** | 🟠 **HIGH** | Package name and version match the known infected list | Uninstall package. Check lockfiles. Clear caches. |

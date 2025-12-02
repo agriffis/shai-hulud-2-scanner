@@ -98,25 +98,55 @@ const colors = supportsColor ? {
 // FORENSIC FILE LIST
 // ============================================================================
 
-const MALWARE_FILES = Object.freeze([
-    // Active Payloads (Shai-Hulud 2.0)
-    'setup_bun.js',
-    'bun_environment.js',
+const FORENSIC_RULES = {
+    // === HIGH CONFIDENCE (Alert immediately if found) ===
+    'setup_bun.js': { type: 'CRITICAL', checkContent: false },
+    'bun_environment.js': { type: 'CRITICAL', checkContent: false },
+    'truffleSecrets.json': { type: 'CRITICAL', checkContent: false },
+    'actionsSecrets.json': { type: 'CRITICAL', checkContent: false },
+    '.github/workflows/discussion.yaml': { type: 'CRITICAL', checkContent: false },
+    '.github/workflows/discussion.yml': { type: 'CRITICAL', checkContent: false },
 
-    // Active Payloads (Shai-Hulud 1.0)
-    'bundle.js',
+    // === LOW CONFIDENCE (Must verify content to avoid False Positives) ===
+    
+    // "bundle.js" is common in Webpack/Babel. 
+    // Malware version contains the string "setup_bun" or obfuscated shell calls.
+    'bundle.js': { 
+        type: 'HIGH', 
+        checkContent: true, 
+        indicators: [/setup_bun/i, /bun_environment/i, /child_process/, /socket\.connect/],
+        safePatterns: [/webpack/i, /react/i, /babel/i] // Heuristic for common libs
+    },
 
-    // Exfiltration Evidence (If found, data was likely stolen)
-    'truffleSecrets.json',
-    'cloud.json',
-    'contents.json',
-    'environment.json',
-    'actionsSecrets.json',
-    '.github/workflows/discussion.yml',
-]);
+    // "contents.json" is standard in iOS/Xcode (React Native). 
+    // Malware version contains stolen env vars/tokens.
+    // Xcode version contains "images": [] and "info": { "version": 1, "author": "xcode" }
+    'contents.json': { 
+        type: 'HIGH', 
+        checkContent: true, 
+        isJson: true,
+        requiredKeys: ['aws', 'key', 'token', 'secret', 'password', 'env'], // Malware likely has these
+        safeKeys: ['images', 'info', 'properties'] // Xcode assets have these
+    },
 
-// Pre-compute lowercase versions for case-insensitive matching
-const MALWARE_FILES_LOWER = new Set(MALWARE_FILES.map(f => f.toLowerCase()));
+    // "cloud.json" and "environment.json" are generic.
+    // Malware version is a dump of env vars.
+    'cloud.json': { 
+        type: 'HIGH', 
+        checkContent: true, 
+        isJson: true,
+        requiredKeys: ['aws_access_key_id', 'azure_client_id', 'gcp_token'] 
+    },
+    'environment.json': { 
+        type: 'HIGH', 
+        checkContent: true, 
+        isJson: true,
+        requiredKeys: ['PATH', 'USER', 'SHELL', 'HOME', 'npm_config_'] // Env dump signature
+    }
+};
+
+// Create sets for fast lookup
+//const FORENSIC_FILENAMES_LOWER = new Set(Object.keys(FORENSIC_RULES).map(k => k.toLowerCase()));
 
 // ============================================================================
 // HEURISTIC CONFIGURATION (ReDoS-hardened patterns)
@@ -538,10 +568,23 @@ async function fetchThreats(forceNoCache = false) {
     if (forceNoCache) console.log(`    > ${colors.yellow}Cache bypassed (--no-cache flag)${colors.reset}`);
 
     try {
-        const [wizData, jsonData] = await Promise.allSettled([
-            fetchWithCache(CONFIG.IOC_CSV_URL, CACHE_WIZ_FILE, FALLBACK_WIZ_FILE, 'Wiz.io CSV', forceNoCache),
-            fetchWithCache(CONFIG.IOC_JSON_URL, CACHE_JSON_FILE, FALLBACK_JSON_FILE, 'Malicious JSON', forceNoCache)
-        ]);
+        // Manual Promise handling for Node.js v12.0-v12.8 compatibility (allSettled added in v12.9.0)
+        let wizData = { status: 'rejected', reason: { message: 'Not fetched' }, value: null };
+        let jsonData = { status: 'rejected', reason: { message: 'Not fetched' }, value: null };
+
+        try {
+            const wizResult = await fetchWithCache(CONFIG.IOC_CSV_URL, CACHE_WIZ_FILE, FALLBACK_WIZ_FILE, 'Wiz.io CSV', forceNoCache);
+            wizData = { status: 'fulfilled', value: wizResult };
+        } catch (err) {
+            wizData = { status: 'rejected', reason: err };
+        }
+
+        try {
+            const jsonResult = await fetchWithCache(CONFIG.IOC_JSON_URL, CACHE_JSON_FILE, FALLBACK_JSON_FILE, 'Malicious JSON', forceNoCache);
+            jsonData = { status: 'fulfilled', value: jsonResult };
+        } catch (err) {
+            jsonData = { status: 'rejected', reason: err };
+        }
 
         const badPackages = {};
         let count = 0;
@@ -555,7 +598,8 @@ async function fetchThreats(forceNoCache = false) {
             }
             console.log(`    > [Source 1] Wiz.io: Loaded successfully.`);
         } else {
-            console.log(`${colors.red}    > [Source 1] Failed: ${wizData.reason?.message || 'No data'}${colors.reset}`);
+            const wizError = wizData.reason && wizData.reason.message ? wizData.reason.message : 'No data';
+            console.log(`${colors.red}    > [Source 1] Failed: ${wizError}${colors.reset}`);
         }
 
         // Process Source 2 (Hemachandsai JSON)
@@ -571,7 +615,8 @@ async function fetchThreats(forceNoCache = false) {
             }
             console.log(`    > [Source 2] Hemachandsai: Loaded successfully.`);
         } else {
-            console.log(`${colors.red}    > [Source 2] Failed: ${jsonData.reason?.message || 'No data'}${colors.reset}`);
+            const jsonError = jsonData.reason && jsonData.reason.message ? jsonData.reason.message : 'No data';
+            console.log(`${colors.red}    > [Source 2] Failed: ${jsonError}${colors.reset}`);
         }
 
         // Clean duplicates
@@ -683,7 +728,7 @@ function parseWizCSV(data) {
 
     const lines = data.split('\n').filter(l => l.trim() !== '');
     const result = {};
-    const startIdx = lines[0]?.toLowerCase().includes('package') ? 1 : 0;
+    const startIdx = (lines[0] && lines[0].toLowerCase().includes('package')) ? 1 : 0;
 
     for (let i = startIdx; i < lines.length && i < 100000; i++) {
         const parts = lines[i].split(',');
@@ -995,47 +1040,72 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
 
     scanStats.filesChecked++;
 
+    // Validate package path
+    const validatedPkgPath = validatePath(pkgPath);
+    if (!validatedPkgPath) return;
+
     // 1. FORENSIC CHECK (Malware files)
-    for (const file of MALWARE_FILES) {
-        const filePath = path.join(pkgPath, file);
+    for (const [forensicPath] of Object.entries(FORENSIC_RULES)) {
+        const fullPath = path.join(validatedPkgPath, forensicPath);
+        const validatedFullPath = validatePath(fullPath, validatedPkgPath);
+        
+        if (!validatedFullPath) continue;
+        
+        // Check if file exists and is actually a file (not directory)
+        let fileExists = false;
         try {
-            // Use lstat to detect symlinks
-            const stats = fs.lstatSync(filePath);
-            if (stats.isFile() || stats.isSymbolicLink()) {
-                const msg = `[!!!] CRITICAL: MALWARE FILE FOUND: ${file} in ${sanitizeForLog(pkgName)}`;
-                console.log(`${colors.red}${msg}${colors.reset}`);
-                detectedIssues.push({
-                    type: 'FORENSIC_MATCH',
-                    package: pkgName,
-                    version: 'UNKNOWN',
-                    location: pkgPath,
-                    details: file
-                });
-            }
+            const stats = fs.lstatSync(validatedFullPath);
+            if (!stats.isFile()) continue;
+            fileExists = true;
         } catch (e) {
-            // File doesn't exist, continue
+            continue; // File doesn't exist or can't be accessed
+        }
+        
+        // File exists - verify it
+        const verification = verifySuspiciousFile(validatedFullPath, forensicPath);
+        
+        // Track verification errors
+        if (verification.reason === 'Read error') {
+            scanStats.errorsEncountered++;
+            continue;
+        }
+        
+        if (verification.confirmed) {
+            const severity = verification.severity || 'HIGH';
+            const isCritical = severity === 'CRITICAL';
+            
+            // Use different colors and labels based on severity
+            const label = isCritical ? 'CRITICAL: MALWARE FILE FOUND' : 'SUSPICIOUS: Artifact Found';
+            const color = isCritical ? colors.red : colors.yellow;
+            const issueType = isCritical ? 'FORENSIC_MATCH' : 'FORENSIC_ARTIFACT';
+            
+            const msg = `[${isCritical ? '!!!' : '??'}] ${label}: ${sanitizeForLog(forensicPath, 100)} in ${sanitizeForLog(pkgName)}`;
+            console.log(`${color}${msg}${colors.reset}`);
+            if (forensicPath !== 'setup_bun.js') { // detailed log for contextual files
+                console.log(`${colors.dim}    Reason: ${sanitizeForLog(verification.reason, 150)}${colors.reset}`);
+            }
+
+            detectedIssues.push({
+                type: issueType,
+                package: pkgName,
+                version: 'UNKNOWN',
+                location: validatedPkgPath,
+                details: `${sanitizeForLog(forensicPath, 100)} (${sanitizeForLog(verification.reason, 150)})`
+            });
+            
+        } else {
+            // False positive - record as safe match (silent, like version safe matches)
+            detectedIssues.push({
+                type: 'SAFE_MATCH',
+                package: pkgName,
+                version: 'UNKNOWN',
+                location: validatedPkgPath,
+                details: `Benign ${sanitizeForLog(forensicPath, 50)}: ${sanitizeForLog(verification.reason, 100)}`
+            });
         }
     }
 
-    // Also check case-insensitively on case-insensitive filesystems
-    try {
-        const dirContents = fs.readdirSync(pkgPath);
-        for (const item of dirContents) {
-            if (MALWARE_FILES_LOWER.has(item.toLowerCase()) && !MALWARE_FILES.includes(item)) {
-                const msg = `[!!!] CRITICAL: MALWARE FILE FOUND (case variant): ${item} in ${sanitizeForLog(pkgName)}`;
-                console.log(`${colors.red}${msg}${colors.reset}`);
-                detectedIssues.push({
-                    type: 'FORENSIC_MATCH',
-                    package: pkgName,
-                    version: 'UNKNOWN',
-                    location: pkgPath,
-                    details: `${item} (case variant)`
-                });
-            }
-        }
-    } catch (e) { }
-
-    const pJsonPath = path.join(pkgPath, 'package.json');
+    const pJsonPath = path.join(validatedPkgPath, 'package.json');
 
     // 2. GHOST CHECK
     if (!fs.existsSync(pJsonPath)) {
@@ -1120,6 +1190,146 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
             });
         }
     }
+}
+
+
+// ============================================================================
+// FORNSIC FILE VERIFICATION (Deep Content Scan)
+// ============================================================================
+
+function verifySuspiciousFile(filePath, fileName) {
+    // Input validation
+    if (!filePath || typeof filePath !== 'string' || !fileName || typeof fileName !== 'string') {
+        return { confirmed: false, reason: 'Invalid parameters' };
+    }
+    
+    // Validate path
+    const validatedPath = validatePath(filePath);
+    if (!validatedPath) {
+        return { confirmed: false, reason: 'Invalid file path' };
+    }
+    
+    // 1. Get rule
+    // Handle case-insensitive match logic
+    const exactRule = FORENSIC_RULES[fileName];
+    const lowerRuleKey = Object.keys(FORENSIC_RULES).find(k => k.toLowerCase() === fileName.toLowerCase());
+    const rule = exactRule || FORENSIC_RULES[lowerRuleKey];
+
+    if (!rule) return { confirmed: false, reason: 'No rule found' };
+
+    // 2. High Confidence files need no verification
+    if (!rule.checkContent) {
+        return { confirmed: true, reason: 'High confidence IOC', severity: rule.type };
+    }
+
+    // 3. Read File Content (Limit to 5MB to prevent freezing on huge bundles)
+    const { content, error, size } = safeReadFile(validatedPath, 5 * 1024 * 1024);
+    if (error) return { confirmed: false, reason: 'Read error' };
+    if (!content || size === 0) return { confirmed: false, reason: 'Empty file' };
+    
+    // Additional safety: Limit content length for regex operations to prevent ReDoS
+    const MAX_CONTENT_LENGTH_FOR_REGEX = 10 * 1024 * 1024; // 10MB
+    if (content.length > MAX_CONTENT_LENGTH_FOR_REGEX) {
+        return { confirmed: false, reason: 'File too large for content analysis' };
+    }
+
+    // 4. JSON Validation (for contents.json, cloud.json)
+    if (rule.isJson) {
+        try {
+            // Prevent JSON bomb attacks - limit JSON depth and size
+            if (content.length > 5 * 1024 * 1024) { // 5MB limit for JSON
+                return { confirmed: false, reason: 'JSON file too large' };
+            }
+            
+            const json = JSON.parse(content);
+            
+            // Validate JSON structure
+            if (typeof json !== 'object' || json === null) {
+                return { confirmed: false, reason: 'Invalid JSON structure' };
+            }
+            
+            const keys = Object.keys(json);
+            
+            // Bounds check on keys
+            if (keys.length > 10000) {
+                return { confirmed: false, reason: 'JSON has too many keys' };
+            }
+            
+            // Check Safe Keys (Allowlist) - If it has these, it's likely safe
+            if (rule.safeKeys && rule.safeKeys.some(safeKey => keys.includes(safeKey))) {
+                return { confirmed: false, reason: 'Contains whitelisted JSON keys' };
+            }
+
+            // Check Malicious Keys (Blocklist) - Must have at least one suspicious key
+            const hasSuspiciousKey = rule.requiredKeys.some(reqKey => {
+                if (!reqKey || typeof reqKey !== 'string') return false;
+                
+                // Check top level keys
+                if (keys.some(k => k && k.toLowerCase().includes(reqKey.toLowerCase()))) {
+                    return true;
+                }
+                
+                // Or check generic "env" dumps where values are strings
+                // Limit stringified JSON length to prevent DoS
+                try {
+                    const jsonStr = JSON.stringify(json);
+                    if (jsonStr.length > 1024 * 1024) { // 1MB limit
+                        return false; // Skip deep scan if too large
+                    }
+                    return jsonStr.includes(reqKey);
+                } catch (e) {
+                    return false;
+                }
+            });
+
+            if (hasSuspiciousKey) {
+                return { confirmed: true, reason: 'Contains suspicious JSON keys', severity: rule.type };
+            }
+            return { confirmed: false, reason: 'JSON structure benign', severity: rule.type };
+
+        } catch (e) {
+            // If it's meant to be JSON but fails parsing, it's not our target (or corrupt)
+            return { confirmed: false, reason: 'Invalid JSON' };
+        }
+    }
+
+    // 5. Text/Script Validation (for bundle.js)
+    if (rule.indicators) {
+        // For large files, limit content checked to prevent performance issues
+        const contentToCheck = content.length > 1024 * 1024 
+            ? content.slice(0, 1024 * 1024) // Check first 1MB only
+            : content;
+        
+        // Check for indicators with ReDoS protection
+        const matchesIndicator = rule.indicators.some(regex => {
+            try {
+                return regex.test(contentToCheck);
+            } catch (e) {
+                scanStats.errorsEncountered++;
+                return false;
+            }
+        });
+        
+        // Optional: Check for safe patterns (like Webpack boilerplate) to reduce noise
+        const matchesSafe = rule.safePatterns ? rule.safePatterns.some(regex => {
+            try {
+                return regex.test(contentToCheck);
+            } catch (e) {
+                scanStats.errorsEncountered++;
+                return false;
+            }
+        }) : false;
+
+        if (matchesIndicator && !matchesSafe) {
+            return { confirmed: true, reason: 'Matched malicious content signatures', severity: rule.type };
+        }
+        
+        // Special logic: If bundle.js is huge and has no suspicious strings, it's likely safe.
+        // Malware payloads are often relatively small or specific.
+        return { confirmed: false, reason: 'Content did not match malware signatures', severity: rule.type };
+    }
+
+    return { confirmed: false, reason: 'Inconclusive' };
 }
 
 // ============================================================================
