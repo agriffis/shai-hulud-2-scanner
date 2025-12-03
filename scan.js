@@ -53,14 +53,9 @@ const CONFIG = Object.freeze({
     DEFAULT_SCAN_DEPTH: 0,
     NETWORK_TIMEOUT_MS: 15000, // 15 seconds
     MAX_PATH_LENGTH: 4096,
-    MAX_SYMLINK_DEPTH: 3,
 
     // CI/CD Defaults
     DEFAULT_FAIL_ON: 'critical',
-
-    // Scan Stats Limits (prevent infinite loops)
-    MAX_DIRECTORIES_SCANNED: 100000,
-    MAX_PACKAGES_SCANNED: 50000,
 });
 
 // Derived cache paths
@@ -323,21 +318,12 @@ function validatePath(inputPath, basePath = null) {
  * @param {number} depth - Current symlink resolution depth
  * @returns {{isSymlink: boolean, realPath: string|null, safe: boolean}}
  */
-function checkSymlink(filePath, depth = 0) {
+function checkSymlink(filePath) {
     try {
         const stats = fs.lstatSync(filePath);
-        if (!stats.isSymbolicLink()) {
-            return { isSymlink: false, realPath: filePath, safe: true };
-        }
-
-        if (depth >= CONFIG.MAX_SYMLINK_DEPTH) {
-            return { isSymlink: true, realPath: null, safe: false };
-        }
-
-        const realPath = fs.realpathSync(filePath);
-        return { isSymlink: true, realPath, safe: true };
+        return stats.isSymbolicLink();
     } catch (e) {
-        return { isSymlink: false, realPath: null, safe: false };
+        return false;
     }
 }
 
@@ -916,14 +902,6 @@ function scanDir(currentPath, badPackages, depth = 0, maxDepth = CONFIG.DEFAULT_
     // Check shutdown flag
     if (isShuttingDown) return;
 
-    // Check scan limits
-    if (scanStats.directoriesScanned >= CONFIG.MAX_DIRECTORIES_SCANNED) {
-        if (scanStats.directoriesScanned === CONFIG.MAX_DIRECTORIES_SCANNED) {
-            console.log(`${colors.yellow}    > Warning: Directory scan limit reached (${CONFIG.MAX_DIRECTORIES_SCANNED})${colors.reset}`);
-        }
-        return;
-    }
-
     // Enforce hard depth limit
     if (maxDepth && depth > maxDepth) return;
 
@@ -932,15 +910,7 @@ function scanDir(currentPath, badPackages, depth = 0, maxDepth = CONFIG.DEFAULT_
     if (!validated) return;
 
     // Check for symlinks
-    const symlinkCheck = checkSymlink(validated);
-    if (symlinkCheck.isSymlink) {
-        if (!symlinkCheck.safe) {
-            scanStats.symlinksSkipped++;
-            return;
-        }
-        // Use real path for symlinks
-        currentPath = symlinkCheck.realPath;
-    }
+    if (checkSymlink(validated)) return;
 
     scanStats.directoriesScanned++;
 
@@ -985,13 +955,6 @@ function scanNodeModules(modulesPath, badPackages) {
         for (const pkg of packages) {
             if (isShuttingDown) break;
             if (pkg.startsWith('.')) continue;
-
-            if (scanStats.packagesScanned >= CONFIG.MAX_PACKAGES_SCANNED) {
-                if (scanStats.packagesScanned === CONFIG.MAX_PACKAGES_SCANNED) {
-                    console.log(`${colors.yellow}    > Warning: Package scan limit reached (${CONFIG.MAX_PACKAGES_SCANNED})${colors.reset}`);
-                }
-                return;
-            }
 
             if (pkg.startsWith('@')) {
                 const scopedPath = path.join(modulesPath, pkg);
