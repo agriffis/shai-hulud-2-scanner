@@ -597,8 +597,8 @@ async function fetchThreats(forceNoCache = false) {
         if (wizData.status === 'fulfilled' && wizData.value) {
             const parsed = parseWizCSV(wizData.value);
             for (const [pkg, vers] of Object.entries(parsed)) {
-                if (!badPackages[pkg]) badPackages[pkg] = [];
-                badPackages[pkg].push(...vers);
+                if (!badPackages[pkg]) badPackages[pkg] = new Set();
+                vers.forEach(v => badPackages[pkg].add(v));
             }
             console.log(`    > [Source 1] Wiz.io: Loaded successfully.`);
         } else {
@@ -610,11 +610,11 @@ async function fetchThreats(forceNoCache = false) {
         if (jsonData.status === 'fulfilled' && jsonData.value) {
             const parsed = parseMaliciousJSON(jsonData.value);
             for (const [pkg, vers] of Object.entries(parsed)) {
-                if (!badPackages[pkg]) badPackages[pkg] = [];
+                if (!badPackages[pkg]) badPackages[pkg] = new Set();
                 if (vers.length === 0) {
-                    if (!badPackages[pkg].includes('*')) badPackages[pkg].push('*');
+                    badPackages[pkg].add('*');
                 } else {
-                    badPackages[pkg].push(...vers);
+                    vers.forEach(v => badPackages[pkg].add(v));
                 }
             }
             console.log(`    > [Source 2] Hemachandsai: Loaded successfully.`);
@@ -623,9 +623,8 @@ async function fetchThreats(forceNoCache = false) {
             console.log(`${colors.red}    > [Source 2] Failed: ${jsonError}${colors.reset}`);
         }
 
-        // Clean duplicates
+        // Count packages
         for (const pkg in badPackages) {
-            badPackages[pkg] = [...new Set(badPackages[pkg])];
             count++;
         }
 
@@ -1167,8 +1166,9 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
 
         const targetVersions = badPackages[pkgName];
 
-        if (targetVersions.includes('*') || targetVersions.includes(version)) {
-            const matchType = targetVersions.includes('*') ? 'WILDCARD_MATCH' : 'VERSION_MATCH';
+        const hasWildcard = targetVersions.has('*');
+        if (hasWildcard || targetVersions.has(version)) {
+            const matchType = hasWildcard ? 'WILDCARD_MATCH' : 'VERSION_MATCH';
             console.log(`${colors.red}    [!] ALERT: ${sanitizeForLog(pkgName)}@${sanitizeForLog(version)} matches denylist (${matchType})${colors.reset}`);
             detectedIssues.push({
                 type: matchType,
@@ -1431,7 +1431,7 @@ function checkVersionMatch(pkg, ver, badVersions, lockPath, type) {
 
     const cleanVer = ver.slice(0, 50); // Limit version string length
 
-    if (badVersions.includes(cleanVer)) {
+    if (badVersions.has(cleanVer)) {
         detectedIssues.push({
             type: 'LOCKFILE_HIT',
             package: pkg,
@@ -1440,7 +1440,7 @@ function checkVersionMatch(pkg, ver, badVersions, lockPath, type) {
             details: `Exact match in ${type}`
         });
     }
-    else if (badVersions.includes('*')) {
+    else if (badVersions.has('*')) {
         detectedIssues.push({
             type: 'WILDCARD_LOCK_HIT',
             package: pkg,
@@ -1494,46 +1494,53 @@ function checkLockfile(lockPath, badPackages) {
 
     // --- 2. Yarn Lockfile ---
     else if (fileName === 'yarn.lock') {
-        for (const [pkg, badVersions] of Object.entries(badPackages)) {
-            const escapedPkg = escapeRegExp(pkg);
-
-            badVersions.forEach(badVer => {
-                try {
-                    if (badVer === '*') {
-                        // Wildcard: check if package exists at all
-                        const wildcardRegex = new RegExp(`"?${escapedPkg}@[^:]{1,100}:`, 'g');
-                        if (wildcardRegex.test(content)) {
+        // Parse yarn.lock once and check against badPackages
+        // This is much faster than regex matching for each package×version combination
+        const lines = content.split('\n');
+        let currentPkg = null;
+        let currentVersion = null;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Package declaration line (e.g., "pkg@^1.0.0:")
+            if (line && !line.startsWith(' ') && line.includes('@') && line.endsWith(':')) {
+                const match = line.match(/^"?([^@"]+)@/);
+                if (match) {
+                    currentPkg = match[1];
+                    currentVersion = null;
+                }
+            }
+            // Version line (e.g., "  version "1.0.0"")
+            else if (currentPkg && line.trim().startsWith('version ')) {
+                const versionMatch = line.match(/version\s+"([^"]+)"/);
+                if (versionMatch) {
+                    currentVersion = versionMatch[1];
+                    
+                    // Check if this package/version is in our denylist
+                    if (badPackages[currentPkg]) {
+                        const badVersions = badPackages[currentPkg];
+                        if (badVersions.has('*')) {
                             detectedIssues.push({
                                 type: 'WILDCARD_LOCK_HIT',
-                                package: pkg,
-                                version: 'ALL',
+                                package: currentPkg,
+                                version: currentVersion,
                                 location: lockPath,
                                 details: 'Yarn Lock match (Wildcard)'
                             });
-                        }
-                    } else {
-                        // Specific version match
-                        const escapedVer = escapeRegExp(badVer);
-                        const strictRegex = new RegExp(
-                            `"?${escapedPkg}@[^:]{1,100}:[^}]{0,500}version\\s+"${escapedVer}"`,
-                            'm'
-                        );
-
-                        if (strictRegex.test(content)) {
+                        } else if (badVersions.has(currentVersion)) {
                             detectedIssues.push({
                                 type: 'LOCKFILE_HIT',
-                                package: pkg,
-                                version: badVer,
+                                package: currentPkg,
+                                version: currentVersion,
                                 location: lockPath,
                                 details: 'Yarn Lock match (Strict)'
                             });
                         }
                     }
-                } catch (e) {
-                    // Regex error, skip this pattern
-                    scanStats.errorsEncountered++;
+                    currentPkg = null; // Reset after processing
                 }
-            });
+            }
         }
     }
 }
