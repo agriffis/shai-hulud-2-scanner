@@ -1144,10 +1144,22 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
         // A. HEURISTIC SCRIPT CHECK (Run on everything)
         checkScripts(packageJson, pkgName, pkgPath);
 
-        // B. TARGET CHECK
+        // B. CHECK DEPENDENCIES (if this is a root package.json, not in node_modules)
+        const isRootPackage = !pkgPath.includes('node_modules');
+        if (isRootPackage && packageJson.dependencies) {
+            checkDependencies(packageJson.dependencies, 'dependencies', pkgPath, badPackages);
+        }
+        if (isRootPackage && packageJson.devDependencies) {
+            checkDependencies(packageJson.devDependencies, 'devDependencies', pkgPath, badPackages);
+        }
+        if (isRootPackage && packageJson.optionalDependencies) {
+            checkDependencies(packageJson.optionalDependencies, 'optionalDependencies', pkgPath, badPackages);
+        }
+
+        // C. TARGET CHECK
         if (!badPackages[pkgName]) return;
 
-        // C. VERSION CHECK
+        // D. VERSION CHECK
         const version = packageJson.version;
         if (!version || typeof version !== 'string') {
             detectedIssues.push({
@@ -1194,7 +1206,7 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
 
 
 // ============================================================================
-// FORNSIC FILE VERIFICATION (Deep Content Scan)
+// FORENSIC FILE VERIFICATION (Deep Content Scan)
 // ============================================================================
 
 function verifySuspiciousFile(filePath, fileName) {
@@ -1330,6 +1342,56 @@ function verifySuspiciousFile(filePath, fileName) {
     }
 
     return { confirmed: false, reason: 'Inconclusive' };
+}
+
+// ============================================================================
+// DEPENDENCY CHECKER
+// ============================================================================
+
+function checkDependencies(deps, depType, pkgPath, badPackages) {
+    if (!deps || typeof deps !== 'object') return;
+    
+    for (const [pkgName, versionSpec] of Object.entries(deps)) {
+        if (!badPackages[pkgName]) continue;
+        
+        const targetVersions = badPackages[pkgName];
+        const hasWildcard = targetVersions.has('*');
+        
+        // Check if version spec matches a known bad version
+        // Extract version from spec (handle ^1.0.0, ~1.0.0, >=1.0.0, etc.)
+        const versionMatch = versionSpec.match(/[\d]+\.[\d]+\.[\d]+/);
+        const cleanVersion = versionMatch ? versionMatch[0] : versionSpec;
+        
+        // Check for exact match or wildcard
+        if (hasWildcard) {
+            console.log(`${colors.red}    [!] DEPENDENCY ALERT: ${sanitizeForLog(pkgName)}@${sanitizeForLog(versionSpec)} in ${depType} (WILDCARD)${colors.reset}`);
+            detectedIssues.push({
+                type: 'WILDCARD_DEPENDENCY_HIT',
+                package: pkgName,
+                version: versionSpec,
+                location: pkgPath,
+                details: `Wildcard match in ${depType}`
+            });
+        } else if (targetVersions.has(cleanVersion) || targetVersions.has(versionSpec)) {
+            console.log(`${colors.red}    [!] DEPENDENCY ALERT: ${sanitizeForLog(pkgName)}@${sanitizeForLog(versionSpec)} in ${depType}${colors.reset}`);
+            detectedIssues.push({
+                type: 'DEPENDENCY_HIT',
+                package: pkgName,
+                version: versionSpec,
+                location: pkgPath,
+                details: `Exact match in ${depType}`
+            });
+        } else {
+            // Safe match - package is in denylist but version is different
+            detectedIssues.push({
+                type: 'SAFE_MATCH',
+                package: pkgName,
+                version: versionSpec,
+                location: pkgPath,
+                details: `Safe version in ${depType}`
+            });
+        }
+    }
 }
 
 // ============================================================================
