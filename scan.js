@@ -146,7 +146,11 @@ const FORENSIC_RULES = {
 };
 
 // Create sets for fast lookup
-//const FORENSIC_FILENAMES_LOWER = new Set(Object.keys(FORENSIC_RULES).map(k => k.toLowerCase()));
+const FORENSIC_RULES_ENTRIES = Object.entries(FORENSIC_RULES); // Cache entries array
+const FORENSIC_RULES_KEYS_LOWER = Object.keys(FORENSIC_RULES).reduce((map, key) => {
+    map[key.toLowerCase()] = key;
+    return map;
+}, {}); // Cache lowercase to original key mapping
 
 // ============================================================================
 // HEURISTIC CONFIGURATION (ReDoS-hardened patterns)
@@ -1024,10 +1028,14 @@ function checkPackageLockfiles(pkgPath, badPackages) {
     for (const lockFile of lockFiles) {
         const lockPath = path.join(pkgPath, lockFile);
         try {
-            if (fs.existsSync(lockPath)) {
+            // Use lstatSync to check existence and file type in one call
+            const stats = fs.lstatSync(lockPath);
+            if (stats.isFile()) {
                 checkLockfile(lockPath, badPackages);
             }
-        } catch (e) { }
+        } catch (e) {
+            // File doesn't exist or can't be accessed - skip silently
+        }
     }
 }
 
@@ -1045,23 +1053,22 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
     if (!validatedPkgPath) return;
 
     // 1. FORENSIC CHECK (Malware files)
-    for (const [forensicPath] of Object.entries(FORENSIC_RULES)) {
+    for (const [forensicPath] of FORENSIC_RULES_ENTRIES) {
         const fullPath = path.join(validatedPkgPath, forensicPath);
-        const validatedFullPath = validatePath(fullPath, validatedPkgPath);
         
-        if (!validatedFullPath) continue;
-        
-        // Check if file exists and is actually a file (not directory)
-        let fileExists = false;
+        // Fast path: Check if file exists before expensive operations
         try {
-            const stats = fs.lstatSync(validatedFullPath);
+            const stats = fs.lstatSync(fullPath);
             if (!stats.isFile()) continue;
-            fileExists = true;
         } catch (e) {
-            continue; // File doesn't exist or can't be accessed
+            continue; // File doesn't exist - skip remaining checks
         }
         
-        // File exists - verify it
+        // File exists - validate path for security (only when needed)
+        const validatedFullPath = validatePath(fullPath, validatedPkgPath);
+        if (!validatedFullPath) continue;
+        
+        // Verify file content
         const verification = verifySuspiciousFile(validatedFullPath, forensicPath);
         
         // Track verification errors
@@ -1107,39 +1114,37 @@ function checkPackageJson(pkgPath, pkgName, badPackages) {
 
     const pJsonPath = path.join(validatedPkgPath, 'package.json');
 
-    // 2. GHOST CHECK
-    if (!fs.existsSync(pJsonPath)) {
-        if (badPackages[pkgName]) {
-            console.log(`${colors.yellow}    [?] WARNING: Ghost folder "${sanitizeForLog(pkgName)}"${colors.reset}`);
-            detectedIssues.push({
-                type: 'GHOST_PACKAGE',
-                package: pkgName,
-                version: 'UNKNOWN',
-                location: pkgPath,
-                details: 'Targeted package folder exists but package.json is missing'
-            });
-        }
-        return;
-    }
-
-    // 3. METADATA CHECK & HEURISTIC CHECK
+    // 2. GHOST CHECK & 3. METADATA CHECK & HEURISTIC CHECK
+    let packageJson;
     try {
-        const { content, error, size } = safeReadFile(pJsonPath, CONFIG.MAX_FILE_SIZE_BYTES);
+        const { content, error } = safeReadFile(pJsonPath, CONFIG.MAX_FILE_SIZE_BYTES);
 
         if (error) {
             if (badPackages[pkgName]) {
-                detectedIssues.push({
-                    type: 'CORRUPT_PACKAGE',
-                    package: pkgName,
-                    version: 'UNKNOWN',
-                    location: pkgPath,
-                    details: `package.json ${error}`
-                });
+                if (error === 'ENOENT') {
+                    // Ghost package - folder exists but no package.json
+                    console.log(`${colors.yellow}    [?] WARNING: Ghost folder "${sanitizeForLog(pkgName)}"${colors.reset}`);
+                    detectedIssues.push({
+                        type: 'GHOST_PACKAGE',
+                        package: pkgName,
+                        version: 'UNKNOWN',
+                        location: pkgPath,
+                        details: 'Targeted package folder exists but package.json is missing'
+                    });
+                } else {
+                    detectedIssues.push({
+                        type: 'CORRUPT_PACKAGE',
+                        package: pkgName,
+                        version: 'UNKNOWN',
+                        location: pkgPath,
+                        details: `package.json ${error}`
+                    });
+                }
             }
             return;
         }
 
-        const packageJson = JSON.parse(content);
+        packageJson = JSON.parse(content);
 
         // A. HEURISTIC SCRIPT CHECK (Run on everything)
         checkScripts(packageJson, pkgName, pkgPath);
@@ -1212,8 +1217,8 @@ function verifySuspiciousFile(filePath, fileName) {
     // 1. Get rule
     // Handle case-insensitive match logic
     const exactRule = FORENSIC_RULES[fileName];
-    const lowerRuleKey = Object.keys(FORENSIC_RULES).find(k => k.toLowerCase() === fileName.toLowerCase());
-    const rule = exactRule || FORENSIC_RULES[lowerRuleKey];
+    const lowerKey = FORENSIC_RULES_KEYS_LOWER[fileName.toLowerCase()];
+    const rule = exactRule || FORENSIC_RULES[lowerKey];
 
     if (!rule) return { confirmed: false, reason: 'No rule found' };
 
@@ -1340,6 +1345,10 @@ function checkScripts(content, pkgName, pkgPath) {
     if (!content || !content.scripts || typeof content.scripts !== 'object') return;
 
     const hooks = ['preinstall', 'install', 'postinstall', 'prepublish', 'prepare', 'preuninstall', 'postuninstall'];
+    
+    // Quick check: do any lifecycle hooks exist?
+    const hasLifecycleHooks = hooks.some(hook => content.scripts[hook]);
+    if (!hasLifecycleHooks) return; // Fast path for packages without lifecycle scripts
 
     for (const hook of hooks) {
         if (!content.scripts[hook]) continue;
