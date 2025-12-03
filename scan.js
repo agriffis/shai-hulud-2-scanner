@@ -50,8 +50,7 @@ const CONFIG = Object.freeze({
     // Security Limits
     MAX_FILE_SIZE_BYTES: 50 * 1024 * 1024, // 50MB max file read
     MAX_LOCKFILE_SIZE_BYTES: 100 * 1024 * 1024, // 100MB for lockfiles
-    MAX_SCAN_DEPTH: 10, // Hard limit on recursion
-    DEFAULT_SCAN_DEPTH: 5,
+    DEFAULT_SCAN_DEPTH: 0,
     NETWORK_TIMEOUT_MS: 15000, // 15 seconds
     MAX_PATH_LENGTH: 4096,
     MAX_SYMLINK_DEPTH: 3,
@@ -926,7 +925,7 @@ function scanDir(currentPath, badPackages, depth = 0, maxDepth = CONFIG.DEFAULT_
     }
 
     // Enforce hard depth limit
-    if (depth > Math.min(maxDepth, CONFIG.MAX_SCAN_DEPTH)) return;
+    if (maxDepth && depth > maxDepth) return;
 
     // Validate path
     const validated = validatePath(currentPath);
